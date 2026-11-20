@@ -13,6 +13,35 @@ export const MAX_ROWS = 20000;
 /** 이 줄 수를 넘는 시트는 읽지 않고 거절한다 (서식만 길게 늘어난 파일로 서버가 느려지는 것을 막는다) */
 const MAX_SHEET_ROWS = 100000;
 
+/** 압축을 푼 뒤의 전체 크기 상한 (20,000건 정상 파일은 수 MB 수준이다) */
+const MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024;
+
+/**
+ * zip 파일의 "중앙 디렉터리"를 읽어 압축을 풀었을 때의 크기 합을 계산한다 (실제로 풀지는 않는다).
+ * 구조를 읽지 못하면 0을 돌려주고, 그 경우는 아래 xlsx 읽기가 거절한다.
+ */
+export function zipUncompressedTotal(bytes: Uint8Array): number {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  // 끝에서부터 "끝 기록"(0x06054b50)을 찾는다
+  let end = -1;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 65535); i -= 1) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      end = i;
+      break;
+    }
+  }
+  if (end < 0) return 0;
+  const entries = view.getUint16(end + 10, true);
+  let offset = view.getUint32(end + 16, true);
+  let total = 0;
+  for (let n = 0; n < entries; n += 1) {
+    if (offset + 46 > bytes.length || view.getUint32(offset, true) !== 0x02014b50) break;
+    total += view.getUint32(offset + 24, true);
+    offset += 46 + view.getUint16(offset + 28, true) + view.getUint16(offset + 30, true) + view.getUint16(offset + 32, true);
+  }
+  return total;
+}
+
 export type ParseResult =
   | {
       ok: true;
@@ -37,8 +66,12 @@ function formatDate(date: Date): string {
 }
 
 /** 엑셀 칸의 값을 글자로 바꾼다. 빈 칸은 빈 글자("")다. */
-export function cellToText(value: ExcelJS.CellValue): string {
+export function cellToText(value: ExcelJS.CellValue, numFmt?: string): string {
   if (value === null || value === undefined) return "";
+  // 숫자 칸의 서식이 "0000"처럼 자릿수를 맞추는 모양이면, 화면에 보이던 대로 앞자리 0을 채운다 (예: 12 → 0012)
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0 && numFmt && /^0{2,}$/.test(numFmt)) {
+    return String(value).padStart(numFmt.length, "0");
+  }
   if (value instanceof Date) return formatDate(value);
   if (typeof value === "object") {
     if ("richText" in value) return value.richText.map((part) => part.text).join("");
@@ -55,6 +88,11 @@ export async function parseNoticeWorkbook(data: ArrayBuffer): Promise<ParseResul
   // .xlsx는 zip 파일이라 맨 앞이 "PK"다
   if (bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
     return { ok: false, error: "엑셀(.xlsx) 파일이 아니에요. 엑셀에서 .xlsx로 저장해 다시 올려주세요." };
+  }
+
+  // 압축 폭탄 방어: 압축을 풀면 너무 커지는 파일은 읽기 전에 거절한다 (4MB 안의 파일이 서버 메모리를 다 쓰는 것을 막는다)
+  if (zipUncompressedTotal(bytes) > MAX_UNCOMPRESSED_BYTES) {
+    return { ok: false, error: "파일 내용이 너무 커요. 불필요한 서식·그림을 지우고 다시 저장해 주세요." };
   }
 
   const workbook = new ExcelJS.Workbook();
@@ -98,7 +136,8 @@ export async function parseNoticeWorkbook(data: ArrayBuffer): Promise<ParseResul
     let hasValue = false;
     for (const column of COLUMNS) {
       const colIndex = columnIndexByLabel.get(column.label) as number;
-      const text = cellToText(row.getCell(colIndex).value);
+      const cell = row.getCell(colIndex);
+      const text = cellToText(cell.value, cell.numFmt);
       record[column.key] = text;
       if (text.trim() !== "") hasValue = true;
     }

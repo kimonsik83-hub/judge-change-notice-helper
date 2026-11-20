@@ -4,7 +4,7 @@
 //   ③ 잠근 뒤의 최종 데이터를 읽고 건수·중복을 확인 → ④ 통지서 문서 만들기.
 // 잠근 회차는 데이터가 바뀌지 않으므로, 같은 요청을 다시 보내면 같은 통지서를 다시 내려받을 수 있다.
 
-import { apiError } from "@/lib/api-response";
+import { apiError, isCrossSiteRequest } from "@/lib/api-response";
 import { getCurrentUser } from "@/lib/auth";
 import { getAllNoticeRows, getOfficerStatuses } from "@/lib/collect";
 import { MAX_NOTICE_ROWS, buildNoticeDocument, findNoticeProblems, noticeFileName } from "@/lib/notice";
@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/server";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function POST(request: Request) {
+  if (isCrossSiteRequest(request)) return apiError(403, "CROSS_SITE", "다른 사이트에서 보낸 요청은 받을 수 없어요.");
   const user = await getCurrentUser();
   if (!user) return apiError(401, "UNAUTHORIZED", "로그인이 필요해요.");
   if (user.role !== "collector") return apiError(403, "FORBIDDEN", "취합 담당자만 통지서를 만들 수 있어요.");

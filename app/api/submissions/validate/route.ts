@@ -2,12 +2,13 @@
 // Plan: 작업 6번. 담당자(officer)만 쓸 수 있고, 역할은 여기서 서버가 직접 확인한다.
 
 import { NextResponse } from "next/server";
-import { apiError } from "@/lib/api-response";
+import { apiError, isCrossSiteRequest } from "@/lib/api-response";
 import { getCurrentUser } from "@/lib/auth";
 import { MAX_FILE_BYTES, parseNoticeWorkbook } from "@/lib/excel";
 import { validateRows } from "@/lib/validate";
 
 export async function POST(request: Request) {
+  if (isCrossSiteRequest(request)) return apiError(403, "CROSS_SITE", "다른 사이트에서 보낸 요청은 받을 수 없어요.");
   const user = await getCurrentUser();
   if (!user) return apiError(401, "UNAUTHORIZED", "로그인이 필요해요.");
   if (user.role !== "officer") return apiError(403, "FORBIDDEN", "담당자만 업로드할 수 있어요.");

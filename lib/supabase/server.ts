@@ -3,6 +3,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { getSupabasePublicEnv } from "./env";
+import { SESSION_COOKIE_OPTIONS } from "./cookie-options";
 
 /** 서버(서버 컴포넌트, 서버 액션)에서 쓰는 Supabase 연결. 로그인 정보는 쿠키에서 읽는다. */
 export async function createClient() {
@@ -10,6 +11,7 @@ export async function createClient() {
   const { url, publishableKey } = getSupabasePublicEnv();
 
   return createServerClient(url, publishableKey, {
+    cookieOptions: SESSION_COOKIE_OPTIONS,
     cookies: {
       getAll() {
         return cookieStore.getAll();
