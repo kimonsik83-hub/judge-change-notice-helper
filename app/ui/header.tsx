@@ -16,7 +16,10 @@ export function Header({ user }: { user: CurrentUser }) {
             <Link href="/history" className="underline-offset-4 hover:underline">
               수정 이력
             </Link>
-            <Link href="/collect/accounts"className="underline-offset-4 hover:underline">
+            <Link href="/stats" className="underline-offset-4 hover:underline">
+              통계
+            </Link>
+            <Link href="/collect/accounts" className="underline-offset-4 hover:underline">
               계정 관리
             </Link>
           </nav>
