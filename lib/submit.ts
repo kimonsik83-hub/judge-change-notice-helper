@@ -55,6 +55,35 @@ export function sanitizeRows(input: unknown, maxRows: number): SanitizeResult {
   return { ok: true, rows };
 }
 
+/** 한 번 제출에 남길 수 있는 수정 이력 최대 건수 */
+export const MAX_EDITS = 5000;
+
+export interface SanitizedEdit {
+  row: number;
+  column: string;
+  oldValue: string;
+}
+
+/**
+ * 요청에서 받은 수정 이력을 정리한다 (PLAN 11번). 모양이 이상한 항목은 버린다.
+ * 새 값은 받지 않는다: 서버가 제출된 행에서 직접 읽으므로 이력과 저장된 값이 어긋나지 않는다.
+ */
+export function sanitizeEdits(input: unknown, rowCount: number): SanitizedEdit[] {
+  if (!Array.isArray(input)) return [];
+  const keys = new Set<string>(COLUMNS.map((column) => column.key));
+  const edits: SanitizedEdit[] = [];
+  for (const item of input) {
+    if (edits.length >= MAX_EDITS) break;
+    if (typeof item !== "object" || item === null) continue;
+    const { row, column, oldValue } = item as Record<string, unknown>;
+    if (typeof row !== "number" || !Number.isInteger(row) || row < 2 || row > rowCount + 1) continue;
+    if (typeof column !== "string" || !keys.has(column)) continue;
+    if (typeof oldValue !== "string" || oldValue.length > MAX_CELL_LENGTH) continue;
+    edits.push({ row, column, oldValue });
+  }
+  return edits;
+}
+
 /** 처음 오류 행 수(통계용)를 0 이상 정수로 정리한다. 이상한 값이면 0. */
 export function sanitizeCount(value: unknown, max: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 0;

@@ -5,7 +5,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
-import { applyEdit, countEdits, rowIndexOf } from "@/lib/edits";
+import { applyEdit, countEdits, diffEdits, rowIndexOf } from "@/lib/edits";
 import { COLUMNS, type ColumnKey, type NoticeRow } from "@/lib/schema";
 import { validateRows, type Issue, type IssueType } from "@/lib/validate";
 
@@ -131,7 +131,12 @@ function Result({ data, round }: { data: UploadedData; round: RoundInfo | null }
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // 처음 오류 행 수는 통계용이다. 서버가 오류 0건인지 다시 검사한다.
-        body: JSON.stringify({ rows, initialErrorCount: data.result.errorRowCount }),
+        body: JSON.stringify({
+          rows,
+          initialErrorCount: data.result.errorRowCount,
+          // 수정 이력: 원본과 달라진 칸만 보낸다 (새 값은 서버가 제출한 행에서 읽는다)
+          edits: diffEdits(data.rows, rows),
+        }),
       });
       const json = await response.json().catch(() => null);
       if (!response.ok) {

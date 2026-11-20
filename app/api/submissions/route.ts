@@ -7,7 +7,7 @@ import { apiError } from "@/lib/api-response";
 import { getCurrentUser } from "@/lib/auth";
 import { MAX_FILE_BYTES, MAX_ROWS } from "@/lib/excel";
 import { getMySubmission, getOpenRound } from "@/lib/rounds";
-import { sanitizeCount, sanitizeRows } from "@/lib/submit";
+import { sanitizeCount, sanitizeEdits, sanitizeRows } from "@/lib/submit";
 import { createClient } from "@/lib/supabase/server";
 import { validateRows } from "@/lib/validate";
 
@@ -56,6 +56,7 @@ export async function POST(request: Request) {
     p_round_id: round.id,
     p_rows: sanitized.rows,
     p_initial_error_count: sanitizeCount(payload.initialErrorCount, MAX_ROWS),
+    p_edits: sanitizeEdits(payload.edits, sanitized.rows.length),
   });
 
   if (error) {

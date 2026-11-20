@@ -33,6 +33,26 @@ export function applyEdit(
   return rows.map((row, i) => (i === index ? { ...row, [column]: next } : row));
 }
 
+/** 수정 이력 한 건: 엑셀 행 번호, 열, 고치기 전(원본) 값. 새 값은 제출하는 행에서 읽는다. */
+export interface EditEntry {
+  readonly row: number;
+  readonly column: ColumnKey;
+  readonly oldValue: string;
+}
+
+/** 원본과 비교해 실제로 달라진 칸의 목록 (수정 이력용, PLAN 11번). 원래 값으로 되돌린 칸은 없다. */
+export function diffEdits(original: readonly NoticeRow[], current: readonly NoticeRow[]): EditEntry[] {
+  const entries: EditEntry[] = [];
+  current.forEach((row, index) => {
+    const before = original[index];
+    if (!before) return;
+    for (const key of Object.keys(row) as ColumnKey[]) {
+      if (row[key] !== before[key]) entries.push({ row: index + FIRST_DATA_ROW, column: key, oldValue: before[key] });
+    }
+  });
+  return entries;
+}
+
 /** 원본과 비교해 고친 칸이 몇 개인지 센다. 다시 원래 값으로 돌려놓은 칸은 세지 않는다. */
 export function countEdits(
   original: readonly NoticeRow[],
