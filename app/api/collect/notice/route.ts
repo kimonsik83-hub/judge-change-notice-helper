@@ -88,6 +88,7 @@ export async function POST(request: Request) {
   // 건수 100% 일치: 제출된 건수와 가져온 건수가 다르면 통지서를 만들지 않는다 (잠긴 데이터는 그대로 남는다)
   if (rows.length !== expectedCount) {
     console.error("통지서 건수 불일치", { expected: expectedCount, actual: rows.length });
+    await unlockIfNeeded(); // 통지서를 내주지 못했으니 방금 건 잠금은 푼다 (담당자가 다시 제출할 수 있게)
     return apiError(500, "COUNT_MISMATCH", "제출된 건수와 읽어온 건수가 달라서 통지서를 만들지 않았어요. 다시 시도해 주세요.", {
       expected: expectedCount,
       actual: rows.length,
@@ -107,11 +108,13 @@ export async function POST(request: Request) {
   try {
     document = await buildNoticeDocument({ roundName: round.name as string, createdAt: new Date(), rows });
   } catch (error) {
-    // 사건 정보가 로그에 남지 않도록 오류 이름만 기록한다. 회차는 이미 잠겨 있어서 다시 시도하면 같은 통지서를 받을 수 있다.
+    // 사건 정보가 로그에 남지 않도록 오류 이름만 기록한다. 통지서를 내주지 못했으니 방금 건 잠금은 푼다.
     console.error("통지서 문서 만들기 실패", error instanceof Error ? error.name : "unknown");
-    return apiError(500, "DOCUMENT_FAILED", "통지서 문서를 만들지 못했어요. 회차는 잠겨 있으니 잠시 뒤 '통지서 다시 내려받기'를 눌러 주세요.");
+    await unlockIfNeeded();
+    return apiError(500, "DOCUMENT_FAILED", "통지서 문서를 만들지 못했어요. 회차는 그대로 열려 있으니 잠시 뒤 다시 시도해 주세요.");
   }
   if (document.rowCount !== expectedCount) {
+    await unlockIfNeeded();
     return apiError(500, "COUNT_MISMATCH", "통지서의 건수가 제출된 건수와 달라서 중단했어요.", {
       expected: expectedCount,
       actual: document.rowCount,

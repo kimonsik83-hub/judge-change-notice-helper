@@ -68,11 +68,17 @@ export function ProceedPanel({
 
       if (!response.ok) {
         const json = await response.json().catch(() => null);
+        // 건수가 맞지 않아 막힌 경우에는 몇 건이 어긋났는지 함께 보여준다
+        const details = json?.error?.details;
+        const gap =
+          json?.error?.code === "COUNT_MISMATCH" && typeof details?.expected === "number" && typeof details?.actual === "number"
+            ? ` (제출 ${details.expected.toLocaleString()}건, 확인된 건수 ${details.actual.toLocaleString()}건)`
+            : "";
         setPhase({
           status: "error",
           message:
-            json?.error?.message ??
-            (response.status === 401 ? "로그인이 만료됐어요. 다시 로그인해 주세요." : "통지서를 만들지 못했어요. 다시 시도해 주세요."),
+            (json?.error?.message ??
+              (response.status === 401 ? "로그인이 만료됐어요. 다시 로그인해 주세요." : "통지서를 만들지 못했어요. 다시 시도해 주세요.")) + gap,
         });
         router.refresh(); // 회차 상태가 바뀌었을 수 있으니 화면을 새로 불러온다
         return;

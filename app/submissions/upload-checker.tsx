@@ -120,6 +120,7 @@ function Result({ data, round }: { data: UploadedData; round: RoundInfo | null }
   const [rows, setRows] = useState<readonly NoticeRow[]>(data.rows);
   const [filter, setFilter] = useState<IssueType | "all">("all");
   const [submit, setSubmit] = useState<SubmitState>({ status: "idle" });
+  const [shownLimit, setShownLimit] = useState(MAX_VISIBLE_ISSUES);
 
   // 제출한 뒤 값을 또 고쳤다면 "제출했어요" 표시는 더 이상 맞지 않으므로 숨긴다
   const submitted = submit.status === "done" && submit.rows === rows ? submit : null;
@@ -165,7 +166,8 @@ function Result({ data, round }: { data: UploadedData; round: RoundInfo | null }
 
   const visible: Issue[] =
     filter === "all" ? [...result.issues] : result.issues.filter((issue) => issue.type === filter);
-  const shown = visible.slice(0, MAX_VISIBLE_ISSUES);
+  // 처음엔 300건만 그려 화면이 느려지지 않게 하고, 버튼으로 더 보거나 전부 볼 수 있다 (누락을 빠짐없이 확인할 수 있게)
+  const shown = visible.slice(0, shownLimit);
 
   function commit(issue: Issue, value: string) {
     setRows((current) => applyEdit(current, issue.row, issue.column, value));
@@ -318,10 +320,25 @@ function Result({ data, round }: { data: UploadedData; round: RoundInfo | null }
           </table>
 
           {visible.length > shown.length ? (
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              {shown.length.toLocaleString()}건만 보여줘요. 나머지 {(visible.length - shown.length).toLocaleString()}건은 위쪽
-              문제를 고치면 이어서 나와요.
-            </p>
+            <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
+              <span>
+                {shown.length.toLocaleString()}건을 보여주고 있어요. 나머지 {(visible.length - shown.length).toLocaleString()}건이 더 있어요.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShownLimit((limit) => limit + MAX_VISIBLE_ISSUES)}
+                className="rounded border border-zinc-300 px-3 py-1 dark:border-zinc-700"
+              >
+                {MAX_VISIBLE_ISSUES}건 더 보기
+              </button>
+              <button
+                type="button"
+                onClick={() => setShownLimit(visible.length)}
+                className="rounded border border-zinc-300 px-3 py-1 dark:border-zinc-700"
+              >
+                전부 보기
+              </button>
+            </div>
           ) : null}
         </>
       )}

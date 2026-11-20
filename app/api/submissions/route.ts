@@ -8,7 +8,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { MAX_FILE_BYTES, MAX_ROWS } from "@/lib/excel";
 import { getMySubmission, getOpenRound } from "@/lib/rounds";
 import { sanitizeCount, sanitizeEdits, sanitizeRows } from "@/lib/submit";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { validateRows } from "@/lib/validate";
 
 export async function POST(request: Request) {
@@ -51,8 +51,10 @@ export async function POST(request: Request) {
 
   const previous = await getMySubmission(round.id, user.id);
 
-  const supabase = await createClient();
+  // 저장 함수는 서버 전용이다(담당자가 DB를 직접 불러 검사를 건너뛰지 못하게). 위에서 로그인·역할·검사를 확인한 뒤에만 부른다.
+  const supabase = createAdminClient();
   const { data: submissionId, error } = await supabase.rpc("submit_notice", {
+    p_officer_id: user.id,
     p_round_id: round.id,
     p_rows: sanitized.rows,
     p_initial_error_count: sanitizeCount(payload.initialErrorCount, MAX_ROWS),
