@@ -95,14 +95,14 @@ function formatProblem(column: ColumnDef, value: string): string | undefined {
     case "flag":
       return FLAG_VALUES.includes(text.toUpperCase() as (typeof FLAG_VALUES)[number])
         ? undefined
-        : `${column.label}은(는) ${FLAG_VALUES.join(" 또는 ")}만 쓸 수 있어요.`;
+        : `${column.label} 칸에는 ${FLAG_VALUES.join(" 또는 ")}만 쓸 수 있어요.`;
     case "date":
       return isValidDate(text)
         ? undefined
-        : `${column.label}은(는) 2026-11-20 같은 실제 날짜여야 해요.`;
+        : `${column.label} 칸에는 2026-11-20 같은 실제 날짜를 적어주세요.`;
     case "person":
       return hasMultiplePeople(value)
-        ? `${column.label}은(는) 한 칸에 한 명만 적어주세요.`
+        ? `${column.label} 칸에는 한 명만 적어주세요.`
         : undefined;
     default:
       return undefined;
@@ -157,7 +157,7 @@ export function validateRows(rows: readonly NoticeRow[]): ValidationResult {
           row: sheetRow,
           column: column.key as ColumnKey,
           caseNumber,
-          message: `${column.label}이(가) 비어 있어요.`,
+          message: `${column.label} 칸이 비어 있어요.`,
         });
       }
     }

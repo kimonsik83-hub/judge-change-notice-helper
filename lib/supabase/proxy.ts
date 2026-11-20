@@ -29,6 +29,13 @@ export async function updateSession(request: NextRequest) {
   const isLoginPage = request.nextUrl.pathname.startsWith("/login");
 
   if (!data?.claims && !isLoginPage) {
+    // API 요청에는 로그인 화면 대신 401 응답을 돌려준다 (화면 코드가 읽을 수 있게)
+    if (request.nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        { error: { code: "UNAUTHORIZED", message: "로그인이 필요해요." } },
+        { status: 401 },
+      );
+    }
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.search = "";
