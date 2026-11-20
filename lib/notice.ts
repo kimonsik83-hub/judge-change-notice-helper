@@ -1,8 +1,8 @@
 // Design Ref: §2.2 취합 담당자 흐름 — "입력된 값만 통지서 양식에 채운다. 없는 값은 비우고 '확인 필요' 표시".
 // Plan: 작업 10번 — 제출된 전체 대상을 워드(.docx) 문서 1개에 표로 만든다 (PRD: 워드 문서 1개에 대상 전체를 표로).
 //
-// ★ 통지서 견본이 아직 없어서 "기본 모양"으로 만들었다: 제목 + 회차·작성일·총 건수 + 12개 열 표(연번 포함).
-//   견본이 생기면 이 파일의 TITLE, WIDTHS(열 폭), buildNoticeDocument 안의 머리글 문구만 바꾸면 된다.
+// ★ 통지서 견본이 아직 없어서 "예시 양식"으로 만들었다: 제목 + 안내 문구 + 회차·작성일·총 건수 + 12개 열 표(연번 포함) + "끝."
+//   견본이 생기면 이 파일의 TITLE, INTRO_TEXT, CLOSING_TEXT, WIDTHS(열 폭), buildNoticeDocument 안의 머리글 문구만 바꾸면 된다.
 //
 // ★ 메모리 때문에 두 단계로 만든다:
 //   docx 라이브러리로 행마다 객체를 만들면 5,000건에 메모리 1.5GB를 써서 서버가 버티지 못한다.
@@ -37,7 +37,11 @@ export const REVIEW_TEXT = "확인 필요";
 export const MAX_NOTICE_ROWS = 30000;
 
 /** 문서 제목 */
-const TITLE = "심판관 변경통지서";
+const TITLE = "심판관 변경 통지서";
+
+/** 예시 양식의 안내 문구 (실제 견본이 생기면 이 두 줄만 바꾼다) */
+const INTRO_TEXT = "아래와 같이 심판관이 변경되었음을 통지합니다.";
+const CLOSING_TEXT = "끝.";
 
 /** 표의 열 폭(단위: twip). 연번 다음에 양식의 12개 열을 PRD 순서대로 넣는다. 합계가 쪽 너비 안에 들어오게 맞췄다. */
 const WIDTHS: Record<ColumnKey, number> = {
@@ -250,6 +254,11 @@ export async function buildNoticeDocument(input: NoticeInput): Promise<{
             spacing: { after: 200 },
             children: [new TextRun({ text: TITLE, bold: true, size: 36 })],
           }),
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 200 },
+            children: [new TextRun({ text: INTRO_TEXT, size: 22 })],
+          }),
           ...infoLines.map(
             (line) => new Paragraph({ spacing: { after: 40 }, children: [new TextRun({ text: line, size: 20 })] }),
           ),
@@ -259,6 +268,11 @@ export async function buildNoticeDocument(input: NoticeInput): Promise<{
             width: { size: columnWidths.reduce((sum, width) => sum + width, 0), type: WidthType.DXA },
             columnWidths,
             rows: [headerRow],
+          }),
+          new Paragraph({
+            alignment: AlignmentType.RIGHT,
+            spacing: { before: 200 },
+            children: [new TextRun({ text: CLOSING_TEXT, size: 20 })],
           }),
         ],
       },
