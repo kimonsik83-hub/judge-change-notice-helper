@@ -18,7 +18,7 @@
 | `/login` | 로그인 | 모두 |
 | `/submissions` | 내 제출 목록 | 담당자 |
 | `/submissions/new` | 엑셀 업로드 + 검사 결과 + 제출 | 담당자 |
-| `/collect` | 제출 현황 + 전체 대상 확인 | 취합 담당자 |
+| `/collect` | 회차 만들기(열린 회차는 하나뿐) + 제출 현황 + 전체 대상 확인 | 취합 담당자 |
 | `/collect/accounts` | 담당자 계정 등록·목록 | 취합 담당자 |
 | `/collect/notice` | 변경통지서 작성·내려받기 | 취합 담당자 |
 | `/history` | 수정 이력 (nice) | 취합 담당자 |
@@ -185,7 +185,7 @@ tests/               규칙 시험
 |------|------|---------|------|
 | POST | `/api/submissions/validate` | 올린 엑셀을 검사해 결과를 돌려준다 (저장 안 함) | 담당자 |
 | GET | `/api/submissions/template` | 빈 양식(.xlsx)을 내려준다 (1행 열 이름, 작성 안내 시트 포함) | 로그인한 사람 |
-| POST | `/api/submissions` | 오류 0건인 내용을 최종 제출한다 | 담당자 |
+| POST | `/api/submissions` | 오류 0건인 내용을 최종 제출한다. 서버가 다시 검사하고, 열린 회차에 DB 함수(`submit_notice`) 하나로 저장한다. 같은 회차 재제출은 덮어쓰고 잠긴 회차는 거절한다 | 담당자 |
 | GET | `/api/submissions` | 제출 목록 (담당자는 자기 것만, 취합 담당자는 전체) | 둘 다 |
 | GET | `/api/collect/rows` | 제출된 전체 대상 조회 (나눠서 가져오기) | 취합 담당자 |
 | POST | `/api/collect/notice` | 통지서 생성과 건수 대조 | 취합 담당자 |

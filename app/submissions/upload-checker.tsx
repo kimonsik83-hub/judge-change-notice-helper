@@ -3,10 +3,24 @@
 // Design Ref: §1.2 담당자 — 업로드·검사 화면. ① 엑셀 올리기 ② 검사 결과 (요약 + 오류 표 + 값 고치기).
 // Plan: 작업 6번(업로드·검사) + 7번(값을 고치면 바로 다시 검사). 최종 제출은 8번에서 이 화면에 이어서 만든다.
 
+import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { applyEdit, countEdits, rowIndexOf } from "@/lib/edits";
 import { COLUMNS, type ColumnKey, type NoticeRow } from "@/lib/schema";
 import { validateRows, type Issue, type IssueType } from "@/lib/validate";
+
+/** 지금 제출할 수 있는 열린 회차 */
+interface RoundInfo {
+  id: string;
+  name: string;
+}
+
+type SubmitState =
+  | { status: "idle" }
+  | { status: "confirm" }
+  | { status: "sending" }
+  | { status: "error"; message: string }
+  | { status: "done"; rows: readonly NoticeRow[]; rowCount: number; roundName: string; overwritten: boolean };
 
 /** 서버가 처음 검사해서 돌려준 결과 */
 interface UploadedData {
@@ -35,7 +49,7 @@ const TYPE_LABEL: Record<IssueType, string> = {
 /** 표에 한 번에 그리는 최대 줄 수. 수천 건이 한꺼번에 그려져 느려지는 것을 막는다. */
 const MAX_VISIBLE_ISSUES = 300;
 
-export function UploadChecker() {
+export function UploadChecker({ round }: { round: RoundInfo | null }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const uploadCount = useRef(0);
   const [state, setState] = useState<State>({ status: "idle" });
@@ -95,15 +109,50 @@ export function UploadChecker() {
       ) : null}
 
       {/* 올릴 때마다 번호가 바뀌어 고친 내용이 새 파일과 섞이지 않고 처음부터 다시 시작한다 */}
-      {state.status === "done" ? <Result key={state.version} data={state.data} /> : null}
+      {state.status === "done" ? <Result key={state.version} data={state.data} round={round} /> : null}
     </div>
   );
 }
 
-function Result({ data }: { data: UploadedData }) {
+function Result({ data, round }: { data: UploadedData; round: RoundInfo | null }) {
+  const router = useRouter();
   // 업로드한 원본은 그대로 두고, 고친 값은 rows(복사본)에만 반영한다
   const [rows, setRows] = useState<readonly NoticeRow[]>(data.rows);
   const [filter, setFilter] = useState<IssueType | "all">("all");
+  const [submit, setSubmit] = useState<SubmitState>({ status: "idle" });
+
+  // 제출한 뒤 값을 또 고쳤다면 "제출했어요" 표시는 더 이상 맞지 않으므로 숨긴다
+  const submitted = submit.status === "done" && submit.rows === rows ? submit : null;
+
+  async function sendSubmission() {
+    setSubmit({ status: "sending" });
+    try {
+      const response = await fetch("/api/submissions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // 처음 오류 행 수는 통계용이다. 서버가 오류 0건인지 다시 검사한다.
+        body: JSON.stringify({ rows, initialErrorCount: data.result.errorRowCount }),
+      });
+      const json = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message =
+          json?.error?.message ??
+          (response.status === 401 ? "로그인이 만료됐어요. 다시 로그인해 주세요." : "제출하지 못했어요. 다시 시도해 주세요.");
+        setSubmit({ status: "error", message });
+        return;
+      }
+      setSubmit({
+        status: "done",
+        rows,
+        rowCount: json.data.rowCount as number,
+        roundName: json.data.roundName as string,
+        overwritten: json.data.overwritten as boolean,
+      });
+      router.refresh(); // 위쪽 "이미 제출했어요" 안내를 새로 불러온다
+    } catch {
+      setSubmit({ status: "error", message: "서버에 연결하지 못했어요. 잠시 뒤 다시 시도해 주세요." });
+    }
+  }
 
   // 값이 바뀔 때마다 서버와 똑같은 검사 규칙으로 바로 다시 검사한다
   const result = useMemo(() => validateRows(rows), [rows]);
@@ -150,7 +199,58 @@ function Result({ data }: { data: UploadedData }) {
       ) : null}
 
       {result.issues.length === 0 ? (
-        <p className="text-sm text-green-700">오류가 없어요. (최종 제출은 다음 작업에서 만들어요)</p>
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-green-700">오류가 없어요. 제출할 수 있어요.</p>
+
+          {submitted ? (
+            <p role="status" className="text-sm text-green-700">
+              <strong>{submitted.roundName}</strong> 회차에 {submitted.rowCount.toLocaleString()}건을 제출했어요.
+              {submitted.overwritten ? " (이전에 제출한 내용을 덮어썼어요.)" : ""}
+            </p>
+          ) : !round ? (
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              지금 열려 있는 회차가 없어서 제출할 수 없어요. 취합 담당자가 회차를 열면 제출할 수 있어요.
+            </p>
+          ) : submit.status === "confirm" ? (
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              <span>
+                <strong>{round.name}</strong> 회차에 {result.totalRows.toLocaleString()}건을 제출할까요? 이미 제출한 내용이
+                있으면 덮어써요.
+              </span>
+              <button
+                type="button"
+                onClick={sendSubmission}
+                className="rounded bg-zinc-900 px-3 py-1.5 text-white dark:bg-zinc-100 dark:text-zinc-900"
+              >
+                제출하기
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubmit({ status: "idle" })}
+                className="rounded border border-zinc-300 px-3 py-1.5 dark:border-zinc-700"
+              >
+                취소
+              </button>
+            </div>
+          ) : (
+            <div>
+              <button
+                type="button"
+                disabled={submit.status === "sending"}
+                onClick={() => setSubmit({ status: "confirm" })}
+                className="rounded bg-zinc-900 px-4 py-2 text-sm text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+              >
+                {submit.status === "sending" ? "제출 중…" : "최종 제출"}
+              </button>
+            </div>
+          )}
+
+          {submit.status === "error" ? (
+            <p role="alert" className="text-sm text-red-600">
+              {submit.message}
+            </p>
+          ) : null}
+        </div>
       ) : (
         <>
           <div className="flex flex-wrap gap-2 text-sm" role="group" aria-label="문제 종류 보기">

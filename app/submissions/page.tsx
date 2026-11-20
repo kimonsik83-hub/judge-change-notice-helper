@@ -1,11 +1,20 @@
 import { Suspense } from "react";
 import { Header } from "@/app/ui/header";
 import { requireRole } from "@/lib/auth";
+import { getMySubmission, getOpenRound } from "@/lib/rounds";
 import { UploadChecker } from "./upload-checker";
 
-// 담당자 전용 화면: 엑셀을 올려 검사 결과를 본다 (PLAN 6번). 값 고치기는 7번, 최종 제출은 8번에서 이어서 만든다.
+const dateTimeFormat = new Intl.DateTimeFormat("ko-KR", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "Asia/Seoul",
+});
+
+// 담당자 전용 화면: 엑셀을 올려 검사하고(6번), 값을 고치고(7번), 열린 회차에 최종 제출한다(8번).
 async function SubmissionsContent() {
   const user = await requireRole("officer");
+  const round = await getOpenRound();
+  const existing = round ? await getMySubmission(round.id, user.id) : null;
 
   return (
     <>
@@ -20,7 +29,23 @@ async function SubmissionsContent() {
             </a>
           </p>
         </section>
-        <UploadChecker />
+
+        <section aria-label="제출할 회차" className="rounded border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-800">
+          {!round ? (
+            <p>지금 열려 있는 회차가 없어요. 취합 담당자가 회차를 열면 제출할 수 있어요. (검사는 지금도 해 볼 수 있어요.)</p>
+          ) : existing ? (
+            <p>
+              제출할 회차: <strong>{round.name}</strong> · 이미 <strong>{existing.rowCount.toLocaleString()}건</strong>을 제출했어요
+              {existing.submittedAt ? ` (${dateTimeFormat.format(new Date(existing.submittedAt))})` : ""}. 다시 제출하면 덮어써요.
+            </p>
+          ) : (
+            <p>
+              제출할 회차: <strong>{round.name}</strong> · 아직 제출하지 않았어요.
+            </p>
+          )}
+        </section>
+
+        <UploadChecker round={round} />
       </main>
     </>
   );
