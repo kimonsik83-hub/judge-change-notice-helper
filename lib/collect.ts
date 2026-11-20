@@ -2,6 +2,7 @@
 // Plan: 작업 9번. 로그인한 취합 담당자의 권한으로 읽으므로 전체가 보이고, 다른 역할이면 DB 접근 제한(RLS)이 막는다.
 // 주의: Supabase는 한 번에 최대 1,000행만 돌려주므로, 건수는 count로 따로 세고 목록은 나눠서(range) 가져온다.
 
+import type { NoticeRow } from "@/lib/schema";
 import { createClient } from "@/lib/supabase/server";
 
 export interface RoundView {
@@ -148,6 +149,62 @@ export interface TargetPage {
   /** 실제로 보여주는 쪽 번호(1부터). 요청한 쪽이 범위를 벗어나면 맞춰서 돌려준다 */
   readonly page: number;
   readonly totalPages: number;
+}
+
+/** 전체 행을 가져올 때 동시에 보내는 요청 수 */
+const FETCH_BATCH = 5;
+
+/**
+ * 통지서에 넣을 제출 전체의 모든 행을 가져온다 (PLAN 10번).
+ * 사건번호 순(같으면 제출, 엑셀 행 순)으로 항상 같은 순서가 나온다.
+ * Supabase는 한 번에 1,000행까지만 주므로 나눠서 가져온다.
+ */
+export async function getAllNoticeRows(submissionIds: readonly string[]): Promise<NoticeRow[]> {
+  if (submissionIds.length === 0) return [];
+  const supabase = await createClient();
+
+  const { count } = await supabase
+    .from("notice_rows")
+    .select("id", { count: "exact", head: true })
+    .in("submission_id", [...submissionIds]);
+  const total = count ?? 0;
+
+  const fetchChunk = async (from: number) => {
+    const { data } = await supabase
+      .from("notice_rows")
+      .select(
+        "case_number, notice_flag, old_panel, new_panel, old_judge, new_judge, investigator, meeting1, meeting2, meeting3, on_hold, decision",
+      )
+      .in("submission_id", [...submissionIds])
+      .order("case_number", { ascending: true })
+      .order("submission_id", { ascending: true })
+      .order("row_number", { ascending: true })
+      .range(from, from + SUPABASE_MAX_ROWS - 1);
+    return data ?? [];
+  };
+
+  const starts: number[] = [];
+  for (let from = 0; from < total; from += SUPABASE_MAX_ROWS) starts.push(from);
+
+  const chunks: Awaited<ReturnType<typeof fetchChunk>>[] = [];
+  for (let i = 0; i < starts.length; i += FETCH_BATCH) {
+    chunks.push(...(await Promise.all(starts.slice(i, i + FETCH_BATCH).map(fetchChunk))));
+  }
+
+  return chunks.flat().map((row) => ({
+    caseNumber: row.case_number as string,
+    noticeFlag: row.notice_flag as string,
+    oldPanel: row.old_panel as string,
+    newPanel: row.new_panel as string,
+    oldJudge: row.old_judge as string,
+    newJudge: row.new_judge as string,
+    investigator: row.investigator as string,
+    meeting1: row.meeting1 as string,
+    meeting2: row.meeting2 as string,
+    meeting3: row.meeting3 as string,
+    onHold: row.on_hold as string,
+    decision: row.decision as string,
+  }));
 }
 
 /** LIKE 검색에서 특별한 뜻을 가진 글자를 그냥 글자로 취급하게 만든다 */

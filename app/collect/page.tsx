@@ -153,6 +153,7 @@ async function CollectContent({
             </section>
 
             <ProceedPanel
+              roundId={viewRound.id}
               roundOpen={viewRound.status === "open"}
               submittedCount={submitted.length}
               totalRows={totalRows}
