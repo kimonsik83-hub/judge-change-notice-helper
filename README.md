@@ -1,36 +1,32 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 심판관 변경통지서 작성 도우미
 
-## Getting Started
+심판관이 바뀔 때 여러 담당자가 올린 변경 대상 엑셀을 **검사·취합**해서 **변경통지서(워드)** 를 자동으로 만들어 주는 웹 앱입니다.
 
-First, run the development server:
+## 왜 만들었나
+담당자마다 엑셀·수기 등 형식이 달라 취합 담당자가 다시 정리해야 했고, 손으로 옮겨 적다 보니 누락·오기가 생기고 시간이 오래 걸렸습니다. 정해진 양식으로만 받고, 앱이 먼저 검사하고, 통지서는 값 그대로 자동 작성합니다.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 핵심 기능
+- **업로드 파일 검사 (must)**: 필수 열 누락을 빠짐없이 모두 표시하고, 같은 사건번호 중복·형식 오류를 찾아 행 번호로 알려 줍니다. 원본 값은 고치지 않습니다.
+- **변경통지서 자동 작성 (must)**: 제출된 전체 대상을 워드 문서 1개의 표로 만듭니다. 입력된 값만 쓰고, 건수는 제출 건수와 100% 일치하며, 불확실한 값은 비우고 "확인 필요"로 표시합니다. 작성하면 그 회차는 잠깁니다.
+- **로그인과 역할**: 담당자(자기 제출분만 봄)와 취합 담당자(전체를 봄).
+- **회차·제출·취합**: 회차 단위 제출(재제출은 덮어쓰기), 담당자별 제출 현황, 담당자 사이 중복 검사, 미제출 경고.
+- **수정 이력, 통계 (nice)**: 업로드 후 고친 값의 기록, 담당자별 오류 집계.
+
+## 기술
+Next.js 16 (App Router) · TypeScript · Tailwind CSS · Supabase(로그인·DB, 접근 제한 RLS) · ExcelJS · docx · Vercel 배포
+
+## 실행
 ```
+npm install
+npm run dev      # 개발 서버
+npm test         # 자동 시험 (검사·통지서·제출 규칙)
+npm run lint
+npm run build
+```
+`.env`에 Supabase 연결 값이 필요합니다 (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`). `.env`는 저장소에 올리지 않습니다. 첫 취합 담당자 계정은 `scripts/create-first-collector.mjs`로 만듭니다.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 문서
+- [PRD.md](PRD.md) 기획서 · [PLAN.md](PLAN.md) 계획서 · [DESIGN.md](DESIGN.md) 설계서 · [CHECK.md](CHECK.md) 검증 결과 · [CLAUDE.md](CLAUDE.md) 작업 규칙
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 보안 원칙
+자료 공개등급은 내부용입니다. 외부 AI 서비스를 쓰지 않고 사건 정보를 외부 AI로 보내지 않습니다. 개인정보는 심판관·조사관 성명만 다룹니다.
