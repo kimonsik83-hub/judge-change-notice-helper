@@ -1,24 +1,26 @@
 "use client";
 
-// Design Ref: §1.2 담당자 — 업로드·검사 화면. ① 엑셀 올리기 ② 검사 결과 (요약 + 오류 표).
-// Plan: 작업 6번. 값 고치기는 7번, 최종 제출은 8번에서 이 화면에 이어서 만든다.
+// Design Ref: §1.2 담당자 — 업로드·검사 화면. ① 엑셀 올리기 ② 검사 결과 (요약 + 오류 표 + 값 고치기).
+// Plan: 작업 6번(업로드·검사) + 7번(값을 고치면 바로 다시 검사). 최종 제출은 8번에서 이 화면에 이어서 만든다.
 
-import { useRef, useState } from "react";
-import { COLUMNS } from "@/lib/schema";
-import type { Issue, IssueType, ValidationResult } from "@/lib/validate";
+import { useMemo, useRef, useState } from "react";
+import { applyEdit, countEdits, rowIndexOf } from "@/lib/edits";
+import { COLUMNS, type ColumnKey, type NoticeRow } from "@/lib/schema";
+import { validateRows, type Issue, type IssueType } from "@/lib/validate";
 
-interface CheckData {
+/** 서버가 처음 검사해서 돌려준 결과 */
+interface UploadedData {
   fileName: string;
-  totalRows: number;
+  rows: NoticeRow[];
   unknownHeaders: string[];
-  result: ValidationResult;
+  result: { errorRowCount: number };
 }
 
 type State =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "done"; data: CheckData };
+  | { status: "done"; data: UploadedData; version: number };
 
 const COLUMN_LABEL: Record<string, string> = Object.fromEntries(
   COLUMNS.map((column) => [column.key, column.label]),
@@ -35,8 +37,8 @@ const MAX_VISIBLE_ISSUES = 300;
 
 export function UploadChecker() {
   const inputRef = useRef<HTMLInputElement>(null);
+  const uploadCount = useRef(0);
   const [state, setState] = useState<State>({ status: "idle" });
-  const [filter, setFilter] = useState<IssueType | "all">("all");
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -47,7 +49,6 @@ export function UploadChecker() {
     }
 
     setState({ status: "loading" });
-    setFilter("all");
     try {
       const body = new FormData();
       body.append("file", file);
@@ -61,7 +62,8 @@ export function UploadChecker() {
         setState({ status: "error", message });
         return;
       }
-      setState({ status: "done", data: json.data as CheckData });
+      uploadCount.current += 1;
+      setState({ status: "done", data: json.data as UploadedData, version: uploadCount.current });
     } catch {
       setState({ status: "error", message: "서버에 연결하지 못했어요. 잠시 뒤 다시 시도해 주세요." });
     }
@@ -92,39 +94,59 @@ export function UploadChecker() {
         </p>
       ) : null}
 
-      {state.status === "done" ? (
-        <Result data={state.data} filter={filter} onFilterChange={setFilter} />
-      ) : null}
+      {/* 올릴 때마다 번호가 바뀌어 고친 내용이 새 파일과 섞이지 않고 처음부터 다시 시작한다 */}
+      {state.status === "done" ? <Result key={state.version} data={state.data} /> : null}
     </div>
   );
 }
 
-function Result({
-  data,
-  filter,
-  onFilterChange,
-}: {
-  data: CheckData;
-  filter: IssueType | "all";
-  onFilterChange: (value: IssueType | "all") => void;
-}) {
-  const { result } = data;
+function Result({ data }: { data: UploadedData }) {
+  // 업로드한 원본은 그대로 두고, 고친 값은 rows(복사본)에만 반영한다
+  const [rows, setRows] = useState<readonly NoticeRow[]>(data.rows);
+  const [filter, setFilter] = useState<IssueType | "all">("all");
+
+  // 값이 바뀔 때마다 서버와 똑같은 검사 규칙으로 바로 다시 검사한다
+  const result = useMemo(() => validateRows(rows), [rows]);
+  const editCount = useMemo(() => countEdits(data.rows, rows), [data.rows, rows]);
+
   const visible: Issue[] =
     filter === "all" ? [...result.issues] : result.issues.filter((issue) => issue.type === filter);
   const shown = visible.slice(0, MAX_VISIBLE_ISSUES);
 
+  function commit(issue: Issue, value: string) {
+    setRows((current) => applyEdit(current, issue.row, issue.column, value));
+  }
+
   return (
     <section aria-label="검사 결과" className="flex flex-col gap-4">
-      <p className="text-sm">
-        <strong>{data.fileName}</strong> · 전체 <strong>{data.totalRows.toLocaleString()}</strong>건 · 오류가 있는 행{" "}
+      <p className="text-sm" aria-live="polite">
+        <strong>{data.fileName}</strong> · 전체 <strong>{result.totalRows.toLocaleString()}</strong>건 · 오류가 있는 행{" "}
         <strong>{result.errorRowCount.toLocaleString()}</strong>개 (필수 누락 {result.missingCount.toLocaleString()} · 형식
         오류 {result.formatCount.toLocaleString()} · 중복 {result.duplicateCount.toLocaleString()})
+        {editCount > 0 ? (
+          <>
+            {" "}
+            · 처음 {data.result.errorRowCount.toLocaleString()}개에서 줄었어요 · 고친 칸 {editCount.toLocaleString()}개
+          </>
+        ) : null}
       </p>
 
       {data.unknownHeaders.length > 0 ? (
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
           양식에 없는 열은 검사하지 않았어요: {data.unknownHeaders.join(", ")}
         </p>
+      ) : null}
+
+      {editCount > 0 ? (
+        <div>
+          <button
+            type="button"
+            onClick={() => setRows(data.rows)}
+            className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700"
+          >
+            고친 내용 모두 되돌리기
+          </button>
+        </div>
       ) : null}
 
       {result.issues.length === 0 ? (
@@ -136,7 +158,7 @@ function Result({
               <button
                 key={value}
                 type="button"
-                onClick={() => onFilterChange(value)}
+                onClick={() => setFilter(value)}
                 aria-pressed={filter === value}
                 className={`rounded border px-2 py-1 ${
                   filter === value
@@ -149,6 +171,10 @@ function Result({
             ))}
           </div>
 
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            값 칸을 고친 뒤 Enter를 누르거나 다른 곳을 누르면 바로 다시 검사해요. 올린 엑셀 파일은 바뀌지 않아요.
+          </p>
+
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-zinc-200 dark:border-zinc-800">
@@ -156,30 +182,72 @@ function Result({
                 <th className="py-2 pr-3">열</th>
                 <th className="py-2 pr-3">사건번호</th>
                 <th className="py-2 pr-3">종류</th>
-                <th className="py-2">문제</th>
+                <th className="py-2 pr-3">문제</th>
+                <th className="py-2">값 고치기</th>
               </tr>
             </thead>
             <tbody>
-              {shown.map((issue, index) => (
-                <tr key={`${issue.row}-${issue.column}-${issue.type}-${index}`} className="border-b border-zinc-100 dark:border-zinc-900">
-                  <td className="py-2 pr-3">{issue.row}</td>
-                  <td className="py-2 pr-3">{COLUMN_LABEL[issue.column] ?? issue.column}</td>
-                  <td className="py-2 pr-3">{issue.caseNumber || "(비어 있음)"}</td>
-                  <td className="py-2 pr-3">{TYPE_LABEL[issue.type]}</td>
-                  <td className="py-2">{issue.message}</td>
-                </tr>
-              ))}
+              {shown.map((issue) => {
+                const index = rowIndexOf(rows, issue.row);
+                const current = index >= 0 ? rows[index][issue.column as ColumnKey] : "";
+                return (
+                  <tr key={`${issue.row}-${issue.column}-${issue.type}`} className="border-b border-zinc-100 dark:border-zinc-900">
+                    <td className="py-2 pr-3">{issue.row}</td>
+                    <td className="py-2 pr-3">{COLUMN_LABEL[issue.column] ?? issue.column}</td>
+                    <td className="py-2 pr-3">{issue.caseNumber || "(비어 있음)"}</td>
+                    <td className="py-2 pr-3">{TYPE_LABEL[issue.type]}</td>
+                    <td className="py-2 pr-3">{issue.message}</td>
+                    <td className="py-2">
+                      <EditCell
+                        // 반영된 값이 바뀌면 입력칸을 새 값으로 다시 만든다
+                        key={current}
+                        label={`${issue.row}행 ${COLUMN_LABEL[issue.column] ?? issue.column}`}
+                        value={current}
+                        onCommit={(value) => commit(issue, value)}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 
           {visible.length > shown.length ? (
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
               {shown.length.toLocaleString()}건만 보여줘요. 나머지 {(visible.length - shown.length).toLocaleString()}건은 위쪽
-              문제를 고친 뒤 다시 검사하면 나와요.
+              문제를 고치면 이어서 나와요.
             </p>
           ) : null}
         </>
       )}
     </section>
+  );
+}
+
+/** 값 한 칸을 고치는 입력칸. Enter를 누르거나 칸을 벗어날 때만 반영한다 (타이핑 도중 행이 사라지지 않게). */
+function EditCell({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: string;
+  onCommit: (value: string) => void;
+}) {
+  return (
+    <input
+      type="text"
+      defaultValue={value}
+      aria-label={`${label} 값 고치기`}
+      placeholder="값 입력"
+      onBlur={(event) => onCommit(event.currentTarget.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          event.currentTarget.blur();
+        }
+      }}
+      className="w-40 rounded border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
+    />
   );
 }
